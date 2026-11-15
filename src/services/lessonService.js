@@ -25,6 +25,7 @@ import {
 import { db } from '../firebase/config'
 import { AGE_GROUPS, DAYS, LEARN_LEVELS, MAX_LEARNS, ordered, TEACH_LEVELS, TIME_SLOTS } from '../data/lessonOptions'
 import { delay, readDb, writeDb } from './localDb'
+import { isBot } from './analytics'
 
 export const PAGE_SIZE = 20
 export const CONTENT_MIN = 10
@@ -200,6 +201,7 @@ export async function deleteLesson(no) {
 // 조회수 +1. 같은 브라우저 탭에서는 레슨마다 한 번만 셉니다. 실패해도 화면에는 영향 없음.
 export async function countView(no) {
   const key = `crosslesson:viewed:${no}`
+  if (isBot()) return false // 검색 봇·자동화 브라우저는 조회수에 넣지 않음
   try {
     if (sessionStorage.getItem(key)) return false
     sessionStorage.setItem(key, '1')

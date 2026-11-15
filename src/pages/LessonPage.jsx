@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import ApplicationItem from '../components/ApplicationItem'
 import { ExchangeBadges } from '../components/CategoryBadge'
+import ShareButton from '../components/ShareButton'
 import { useAuth } from '../contexts/AuthContext'
 import { categoryName } from '../data/categories'
 import { ageGroupsLabel } from '../data/lessonOptions'
@@ -64,6 +65,7 @@ export default function LessonPage() {
   }
 
   const isOwner = user?.uid === lesson.uid
+  const shareTitle = [lesson.teach && categoryName(lesson.teach), lesson.learns.map(categoryName).join(', ')].filter(Boolean).join(' ⇄ ') + ' 교환'
   const place = lesson.offline ? [lesson.sido, lesson.region].filter(Boolean).join(' · ') || '협의' : lesson.region
   const teachLevel = levelLabel(TEACH_LEVELS, lesson.teachLevel)
   const learnLevel = levelLabel(LEARN_LEVELS, lesson.learnLevel)
@@ -81,7 +83,14 @@ export default function LessonPage() {
 
   return (
     <article className="lesson">
-      <p className="crumb"><Link to="/">레슨 찾기</Link> › #{lesson.no}</p>
+      <div className="crumb-row">
+        <p className="crumb"><Link to="/">레슨 찾기</Link> › #{lesson.no}</p>
+        <ShareButton
+          path={`/lesson/${lesson.no}`}
+          title={`${shareTitle} | 크로스레슨`}
+          text={`${shareTitle} 레슨을 함께 할 분을 찾고 있어요.`}
+        />
+      </div>
       <div className="lesson-head">
         <ExchangeBadges teach={lesson.teach} learns={lesson.learns} />
         {lesson.closed && <span className="tag">모집 완료</span>}
