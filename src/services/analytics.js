@@ -29,6 +29,18 @@ function randomId() {
   return (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`).replace(/-/g, '').slice(0, 20)
 }
 
+// 기록하지 않는 방문: 중국·홍콩·마카오·싱가포르 시간대, 중국어 브라우저,
+// 예전 사이트의 .php 주소로 바로 들어온 방문(옛 주소를 훑는 수집 봇이 대부분. 옮긴 주소는 새 주소로 기록됨)
+const EXCLUDED_TZ = /^Asia\/(Shanghai|Chongqing|Chungking|Harbin|Urumqi|Kashgar|Hong_Kong|Macau|Macao|Singapore)$|^(PRC|Hongkong|Singapore)$/
+export function isExcluded(path) {
+  if (/\.php$/i.test(path)) return true
+  let tz = ''
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '' } catch { /* 무시 */ }
+  if (EXCLUDED_TZ.test(tz)) return true
+  const langs = navigator.languages?.length ? navigator.languages : [navigator.language || '']
+  return /^zh\b/i.test(langs[0] || '')
+}
+
 export function isBot() {
   const ua = navigator.userAgent || ''
   return !ua || BOT_RE.test(ua) || navigator.webdriver === true
@@ -160,6 +172,7 @@ export async function trackPageView(path, { uid = '' } = {}) {
   if (path.startsWith('/admin')) return
   if (storage('local')?.getItem(NO_TRACK_KEY) === '1') return
   if (isBot() || document.visibilityState === 'prerender') return
+  if (isExcluded(path)) return
 
   const s = getSession()
   const ua = navigator.userAgent
