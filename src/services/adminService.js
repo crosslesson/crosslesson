@@ -29,18 +29,21 @@ export async function purgeOldVisits() {
 }
 
 // 회원 목록: members(로그인 기록) + users(공개 프로필) + 레슨 수. 가입일 최신순.
+// 공개 프로필은 회원마다 따로 읽지 않고 컬렉션을 한 번에 읽습니다.
 export async function listMembers() {
-  const members = (await getDocs(collection(db, 'members'))).docs.map((d) => ({ uid: d.id, ...d.data() }))
+  const [memberSnap, userSnap] = await Promise.all([getDocs(collection(db, 'members')), getDocs(collection(db, 'users'))])
+  const profiles = new Map(userSnap.docs.map((d) => [d.id, d.data()]))
+  const members = memberSnap.docs.map((d) => ({ uid: d.id, ...d.data() }))
   const rows = await Promise.all(
     members.map(async (m) => {
-      const [profile, lessons] = await Promise.all([
-        getDoc(doc(db, 'users', m.uid)).then((s) => (s.exists() ? s.data() : null)),
-        getCount(query(collection(db, 'lessons'), where('uid', '==', m.uid))).then((c) => c.data().count).catch(() => 0),
-      ])
+      const profile = profiles.get(m.uid)
+      const lessons = await getCount(query(collection(db, 'lessons'), where('uid', '==', m.uid)))
+        .then((c) => c.data().count)
+        .catch(() => 0)
       return { ...m, legacy: m.uid.startsWith('legacy-'), nickname: profile?.nickname ?? '', intro: profile?.intro ?? '', lessons }
     }),
   )
-  return rows.sort((a, b) => b.joinedAt - a.joinedAt)
+  return rows.sort((a, b) => (b.joinedAt ?? 0) - (a.joinedAt ?? 0))
 }
 
 // uid 목록 → { uid: 닉네임 } (공개 프로필에서)

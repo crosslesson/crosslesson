@@ -386,6 +386,14 @@ button.link.danger { color: var(--danger); padding-left: 0; }
 .admin-tabs button { flex: 0 0 auto; white-space: nowrap; border-radius: 0; padding: 12px 12px; border: 0; background: none; font-size: 15px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; }
 .admin-tabs button.on { color: var(--primary-text); border-bottom-color: var(--primary); }
 .admin-intro { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.admin-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 10px; }
+.admin-card-head h2 { margin: 0; }
+.admin-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.admin-periods { flex-wrap: wrap; }
+.admin-tool { font-size: 13px; padding: 6px 11px; }
+.admin-search { width: 200px; max-width: 100%; padding: 7px 11px; font-size: 14px; border: 1.5px solid var(--border); border-radius: 999px; background: var(--card); color: var(--text); }
+.admin-search:focus { outline: none; border-color: var(--primary); }
+@media (max-width: 600px) { .admin-tools, .admin-search { width: 100%; } .admin-search { flex: 1 1 auto; } }
 .admin-divider { border: 0; border-top: 1px solid var(--border); margin: 28px 0 20px; }
 .notify-setting { margin-top: 32px; padding: 14px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
 .notify-setting label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }

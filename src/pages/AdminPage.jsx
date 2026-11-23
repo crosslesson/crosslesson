@@ -105,6 +105,70 @@ function summarize(visits) {
   }
 }
 
+// 불러오기 공통: 데이터·오류·다시 불러오기
+function useLoad(load, deps, errorText) {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    let alive = true
+    setData(null)
+    setError('')
+    load()
+      .then((d) => alive && setData(d))
+      .catch((e) => {
+        console.error(e)
+        if (alive) setError(errorText)
+      })
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...deps, tick])
+  return { data, error, reload: () => setTick((t) => t + 1) }
+}
+
+function RefreshButton({ onClick, loading }) {
+  return (
+    <button type="button" className="chip admin-tool" onClick={onClick} disabled={loading} title="다시 불러오기">
+      {loading ? '불러오는 중…' : '새로고침'}
+    </button>
+  )
+}
+
+// 엑셀에서 한글이 깨지지 않게 BOM 을 붙여 CSV 로 저장합니다.
+function downloadCsv(name, header, rows) {
+  const cell = (v) => {
+    const t = v == null ? '' : String(v)
+    return /[",\n\r]/.test(t) ? `"${t.replaceAll('"', '""')}"` : t
+  }
+  const text = [header, ...rows].map((r) => r.map(cell).join(',')).join('\r\n')
+  const url = URL.createObjectURL(new Blob(['\uFEFF' + text], { type: 'text/csv;charset=utf-8' }))
+  const a = Object.assign(document.createElement('a'), { href: url, download: `${name}-${new Date().toLocaleDateString('sv-SE')}.csv` })
+  document.body.append(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+function SearchBox({ value, onChange, placeholder }) {
+  return (
+    <input
+      type="search"
+      className="admin-search"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      aria-label={placeholder}
+    />
+  )
+}
+
+const matches = (q, ...fields) => {
+  const k = q.trim().toLowerCase()
+  return !k || fields.some((f) => String(f ?? '').toLowerCase().includes(k))
+}
+
 function Table({ title, rows, total, unit = '방문', limit = 10 }) {
   const [all, setAll] = useState(false)
   const shown = all ? rows : rows.slice(0, limit)
@@ -240,28 +304,16 @@ function AdminNav() {
 function VisitsView() {
   const [nicknames, setNicknames] = useState({})
   const [period, setPeriod] = useState('7')
-  const [visits, setVisits] = useState(null)
-  const [error, setError] = useState('')
+  const { data: visits, error, reload } = useLoad(() => listVisits(sinceOf(period)), [period], '접속 기록을 불러오지 못했어요.')
 
   useEffect(() => {
+    if (!visits) return
     let alive = true
-    setVisits(null)
-    setError('')
-    listVisits(sinceOf(period))
-      .then(async (v) => {
-        if (!alive) return
-        setVisits(v)
-        const names = await getNicknames(v.map((x) => x.uid))
-        if (alive) setNicknames(names)
-      })
-      .catch((e) => {
-        console.error(e)
-        if (alive) setError('접속 기록을 불러오지 못했어요.')
-      })
+    getNicknames(visits.map((x) => x.uid)).then((names) => alive && setNicknames(names))
     return () => {
       alive = false
     }
-  }, [period])
+  }, [visits])
 
   const s = useMemo(() => (visits ? summarize(visits) : null), [visits])
 
@@ -278,6 +330,7 @@ function VisitsView() {
               {p.label}
             </button>
           ))}
+          <RefreshButton onClick={reload} loading={!visits && !error} />
         </div>
       </div>
 
@@ -372,27 +425,22 @@ const fmtDateTime = (t) =>
 const DAY = 24 * 3600 * 1000
 
 function MembersView() {
-  const [rows, setRows] = useState(null)
-  const [error, setError] = useState('')
+  const { data: rows, error, reload } = useLoad(listMembers, [], '회원 목록을 불러오지 못했어요.')
   const [kind, setKind] = useState('new')
-
-  useEffect(() => {
-    let alive = true
-    listMembers()
-      .then((r) => alive && setRows(r))
-      .catch((e) => {
-        console.error(e)
-        if (alive) setError('회원 목록을 불러오지 못했어요.')
-      })
-    return () => {
-      alive = false
-    }
-  }, [])
+  const [q, setQ] = useState('')
 
   const now = Date.now()
   const fresh = rows?.filter((r) => !r.legacy) ?? []
   const returning = rows?.filter((r) => r.legacy) ?? []
-  const shown = kind === 'new' ? fresh : returning
+  const shown = (kind === 'new' ? fresh : returning).filter((r) => matches(q, r.nickname, r.email, r.intro))
+
+  function exportCsv() {
+    downloadCsv(
+      kind === 'new' ? '회원-신규가입' : '회원-기존회원',
+      ['가입일', '닉네임', '이메일', '최근 로그인', '레슨 수', '소개'],
+      shown.map((r) => [fmtDateTime(r.joinedAt), r.nickname, r.email, fmtDateTime(r.lastLoginAt), r.lessons, r.intro]),
+    )
+  }
 
   return (
     <>
@@ -401,6 +449,7 @@ function MembersView() {
         <div className="admin-periods">
           <button type="button" className={kind === 'new' ? 'chip on' : 'chip'} onClick={() => setKind('new')}>신규 가입</button>
           <button type="button" className={kind === 'legacy' ? 'chip on' : 'chip'} onClick={() => setKind('legacy')}>돌아온 기존 회원</button>
+          <RefreshButton onClick={reload} loading={!rows && !error} />
         </div>
       </div>
       {error && <p className="error">{error}</p>}
@@ -413,9 +462,15 @@ function MembersView() {
             <div><strong>{fresh.filter((r) => r.joinedAt >= now - 30 * DAY).length}</strong><span>최근 30일 가입</span></div>
           </div>
           <section className="admin-card">
-            <h2>{kind === 'new' ? '신규 가입자' : '돌아온 기존 회원'} ({shown.length})</h2>
+            <div className="admin-card-head">
+              <h2>{kind === 'new' ? '신규 가입자' : '돌아온 기존 회원'} ({shown.length})</h2>
+              <div className="admin-tools">
+                <SearchBox value={q} onChange={setQ} placeholder="닉네임·이메일·소개 검색" />
+                <button type="button" className="chip admin-tool" onClick={exportCsv} disabled={shown.length === 0}>CSV</button>
+              </div>
+            </div>
             {shown.length === 0 ? (
-              <p className="muted">아직 없어요.</p>
+              <p className="muted">{q ? '검색 결과가 없어요.' : '아직 없어요.'}</p>
             ) : (
               <div className="table-wrap">
                 <table className="admin-recent admin-stack members">
@@ -448,30 +503,42 @@ const APP_STATUS = { pending: '답변 대기', accepted: '수락', rejected: '�
 
 // 레슨 신청 현황 (읽기만)
 function ApplicationsView() {
-  const [apps, setApps] = useState(null)
-  const [error, setError] = useState('')
+  const { data: apps, error, reload } = useLoad(() => listApplications(), [], '레슨 신청을 불러오지 못했어요.')
   const [open, setOpen] = useState(null)
-
-  useEffect(() => {
-    let alive = true
-    listApplications()
-      .then((a) => alive && setApps(a))
-      .catch((e) => {
-        console.error(e)
-        if (alive) setError('레슨 신청을 불러오지 못했어요.')
-      })
-    return () => {
-      alive = false
-    }
-  }, [])
+  const [status, setStatus] = useState('all')
+  const [q, setQ] = useState('')
 
   const now = Date.now()
   const count = (fn) => apps?.filter(fn).length ?? 0
+  const shown = (apps ?? []).filter(
+    (a) => (status === 'all' || a.status === status) && matches(q, a.applicantName, a.ownerName, `#${a.lessonNo}`, a.message, a.reply),
+  )
+
+  function exportCsv() {
+    downloadCsv(
+      '레슨신청',
+      ['신청일', '신청자', '레슨 번호', '가르칠 과목', '배울 과목', '작성자', '상태', '메시지', '답장'],
+      shown.map((a) => [
+        fmtDateTime(a.createdAt),
+        displayName(a.applicantName),
+        a.lessonNo,
+        a.lessonTeach ? categoryName(a.lessonTeach) : '',
+        (a.lessonLearns ?? []).map(categoryName).join(', '),
+        displayName(a.ownerName),
+        APP_STATUS[a.status] ?? a.status,
+        a.message,
+        a.reply ?? '',
+      ]),
+    )
+  }
 
   return (
     <>
       <div className="admin-head">
         <h1>레슨 신청</h1>
+        <div className="admin-periods">
+          <RefreshButton onClick={reload} loading={!apps && !error} />
+        </div>
       </div>
       {error && <p className="error">{error}</p>}
       {!apps && !error && <p className="empty">불러오는 중…</p>}
@@ -485,9 +552,22 @@ function ApplicationsView() {
             <div><strong>{count((a) => a.status === 'rejected')}</strong><span>거절</span></div>
           </div>
           <section className="admin-card">
-            <h2>최근 신청 ({apps.length})</h2>
-            {apps.length === 0 ? (
-              <p className="muted">아직 신청이 없어요.</p>
+            <div className="admin-card-head">
+              <h2>최근 신청 ({shown.length})</h2>
+              <div className="admin-tools">
+                <div className="admin-periods">
+                  {[['all', '전체'], ...Object.entries(APP_STATUS)].map(([k, label]) => (
+                    <button key={k} type="button" className={status === k ? 'chip on' : 'chip'} onClick={() => setStatus(k)}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <SearchBox value={q} onChange={setQ} placeholder="닉네임·레슨 번호·메시지 검색" />
+                <button type="button" className="chip admin-tool" onClick={exportCsv} disabled={shown.length === 0}>CSV</button>
+              </div>
+            </div>
+            {shown.length === 0 ? (
+              <p className="muted">{apps.length ? '조건에 맞는 신청이 없어요.' : '아직 신청이 없어요.'}</p>
             ) : (
               <div className="table-wrap">
                 <table className="admin-recent admin-stack apps">
@@ -495,7 +575,7 @@ function ApplicationsView() {
                     <tr><th>신청일</th><th>신청자</th><th>레슨</th><th>작성자</th><th>상태</th><th>메시지</th></tr>
                   </thead>
                   <tbody>
-                    {apps.map((a) => (
+                    {shown.map((a) => (
                       <tr key={a.id}>
                         <td className="c-date">{fmtDateTime(a.createdAt)}</td>
                         <td className="c-nick">{displayName(a.applicantName)}</td>
